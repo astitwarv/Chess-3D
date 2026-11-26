@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public class PieceSelection : MonoBehaviour
 {
@@ -29,12 +30,18 @@ public class PieceSelection : MonoBehaviour
         if (cameraController != null && cameraController.IsMoving)
             return;   // ignore clicks while the camera is turning
 
-        if (Input.GetMouseButtonDown(0))
-        {
-            HandleClick();
-        }
-    }
+        if (gameManager != null && gameManager.IsGameOver)
+            return;   // no moves after checkmate/stalemate (New Game button still works)
 
+        if (!Input.GetMouseButtonDown(0))
+            return;
+
+        // Ignore clicks on UI (e.g. the New Game button)
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+            return;
+
+        HandleClick();
+    }
 
     void HandleClick()
     {
@@ -46,7 +53,6 @@ public class PieceSelection : MonoBehaviour
 
         Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
 
-        // What piece (if any) was clicked?
         ChessPiece clickedPiece = null;
         RaycastHit hit;
         if (Physics.Raycast(ray, out hit))
@@ -59,15 +65,15 @@ public class PieceSelection : MonoBehaviour
             return;
         }
 
-        // CASE 2: Nothing selected -> nothing to move
+        // CASE 2: Nothing selected
         if (selectedPiece == null)
         {
             if (clickedPiece != null)
-                Debug.Log("Invalid selection! Not your turn.");
+                gameManager.ShowMessage("It's " + CurrentPlayerName() + "'s turn.", true);
             return;
         }
 
-        // CASE 3: A piece is selected -> work out the target square
+        // CASE 3: Work out the target square
         Vector2Int target;
 
         if (clickedPiece != null)
@@ -80,7 +86,7 @@ public class PieceSelection : MonoBehaviour
             return;
         }
 
-        // CASE 4: Valid or invalid move?
+        // CASE 4: Valid or invalid move
         if (currentMoves.Contains(target))
         {
             ChessPiece pieceToMove = selectedPiece;
@@ -89,9 +95,14 @@ public class PieceSelection : MonoBehaviour
         }
         else
         {
-            Debug.Log("Invalid move: " + selectedPiece.pieceColor + " " +
-                      selectedPiece.pieceType + " cannot move to " + target);
-            // keep the selection so the player can try again
+            // Explain WHY: wrong pattern, or it would expose the king?
+            bool fitsPattern = MoveRules.GetMoves(selectedPiece, pieceManager).Contains(target);
+
+            if (fitsPattern)
+                gameManager.ShowMessage("That move would leave your King in check.", true);
+            else
+                gameManager.ShowMessage(selectedPiece.pieceType + " can't move to " +
+                                        chessBoard.SquareName(target), true);
         }
     }
 
@@ -107,8 +118,12 @@ public class PieceSelection : MonoBehaviour
         selectedPiece = piece;
         selectedPiece.Select();
 
-        currentMoves = MoveRules.GetMoves(selectedPiece, pieceManager);
+        currentMoves = MoveRules.GetLegalMoves(selectedPiece, pieceManager);
         moveHighlighter.ShowMoves(selectedPiece, currentMoves);
+
+        if (currentMoves.Count == 0)
+            gameManager.ShowMessage(piece.pieceType + " on " +
+                                    chessBoard.SquareName(piece.boardPosition) + " has no moves.", true);
 
         Debug.Log("Selected: " + piece.pieceColor + " " + piece.pieceType +
                   " at " + piece.boardPosition + " | moves: " + MovesToString(currentMoves));
@@ -137,6 +152,11 @@ public class PieceSelection : MonoBehaviour
             return piece.pieceColor == ChessPiece.PieceColor.White;
         else
             return piece.pieceColor == ChessPiece.PieceColor.Black;
+    }
+
+    string CurrentPlayerName()
+    {
+        return gameManager.isWhiteTurn ? "White" : "Black";
     }
 
     public void ClearSelection()

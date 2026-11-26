@@ -1,5 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
 using System.Text;
+using UnityEngine;
 
 public class PieceManager : MonoBehaviour
 {
@@ -16,6 +17,9 @@ public class PieceManager : MonoBehaviour
 
     private ChessPiece[,] board;
     private ChessPiece[] allPieces;
+    // "No square" marker, and the square a pawn can be captured on en passant this turn.
+    public static readonly Vector2Int NoSquare = new Vector2Int(-1, -1);
+    public Vector2Int enPassantSquare = NoSquare;
 
     void Awake()
     {
@@ -90,6 +94,7 @@ public class PieceManager : MonoBehaviour
             }
 
             board[coords.x, coords.y] = piece;   // register piece on its square
+            piece.RecordStartState();             // remember for New Game
 
             bool wrongSide =
                 (piece.pieceColor == ChessPiece.PieceColor.White && coords.y < 6) ||
@@ -107,13 +112,11 @@ public class PieceManager : MonoBehaviour
                   " pieces, " + problems + " problem(s).");
     }
 
-    // Checks the overall starting setup, not just individual pieces.
     int ValidateStartingLayout()
     {
         int problems = 0;
         int size = chessBoard.boardSize;
 
-        // Ranks 0, 1, 6, 7 must be full; ranks 2-5 must be empty.
         for (int z = 0; z < size; z++)
         {
             int count = 0;
@@ -130,7 +133,6 @@ public class PieceManager : MonoBehaviour
             }
         }
 
-        // Kings must face each other, and queens must face each other.
         problems += CheckFacing(ChessPiece.PieceType.King);
         problems += CheckFacing(ChessPiece.PieceType.Queen);
 
@@ -158,7 +160,7 @@ public class PieceManager : MonoBehaviour
         return 0;
     }
 
-    // ───────────────────────── Queries (used by move rules) ─────────────────────────
+    // ───────────────────────── Queries ─────────────────────────
 
     public bool IsInsideBoard(Vector2Int square)
     {
@@ -190,7 +192,7 @@ public class PieceManager : MonoBehaviour
         return other != null && other.pieceColor == myColor;
     }
 
-    // ───────────────────────── Updates (used when a move happens) ─────────────────────────
+    // ───────────────────────── Real moves ─────────────────────────
 
     // Updates DATA only (no visuals). Returns the captured piece, or null.
     public ChessPiece MovePieceData(ChessPiece piece, Vector2Int target)
@@ -222,6 +224,110 @@ public class PieceManager : MonoBehaviour
         piece.boardPosition = target;
 
         return captured;
+    }
+
+    // Removes whatever piece is on a square (DATA only). Returns it, or null.
+    public ChessPiece RemovePieceData(Vector2Int square)
+    {
+        ChessPiece piece = GetPieceAt(square);
+
+        if (piece != null)
+            board[square.x, square.y] = null;
+
+        return piece;
+    }
+
+    // ───────────────────────── New Game ─────────────────────────
+
+    // Puts every piece back to its starting square and rebuilds the board record.
+    public void ResetBoard()
+    {
+        int size = chessBoard.boardSize;
+        board = new ChessPiece[size, size];
+
+        foreach (ChessPiece piece in allPieces)
+        {
+            if (!piece.HasStartState())
+                continue;
+
+            piece.ResetToStart();
+            board[piece.boardPosition.x, piece.boardPosition.y] = piece;
+        }
+        enPassantSquare = NoSquare;
+        Debug.Log("PieceManager: board reset.");
+        PrintBoard();
+    }
+
+    // ───────────────────────── Simulation (king-safety checks) ─────────────────────────
+
+    public struct SimulatedMove
+    {
+        public ChessPiece piece;
+        public Vector2Int from;
+        public Vector2Int to;
+        public ChessPiece captured;
+        public Vector2Int capturedSquare;   // same as 'to', except for en passant
+    }
+
+    // Applies a move to the DATA only, with no checks and no visuals. Always undo it afterwards.
+    public SimulatedMove SimulateMove(ChessPiece piece, Vector2Int to)
+    {
+        SimulatedMove sim;
+        sim.piece = piece;
+        sim.from = piece.boardPosition;
+        sim.to = to;
+        sim.capturedSquare = to;
+
+        // En passant: pawn moves diagonally onto an EMPTY square -> the captured pawn is beside it
+        bool isEnPassant = piece.pieceType == ChessPiece.PieceType.Pawn
+                           && to.x != sim.from.x
+                           && board[to.x, to.y] == null;
+
+        if (isEnPassant)
+            sim.capturedSquare = new Vector2Int(to.x, sim.from.y);
+
+        sim.captured = board[sim.capturedSquare.x, sim.capturedSquare.y];
+
+        board[sim.capturedSquare.x, sim.capturedSquare.y] = null;
+        board[sim.from.x, sim.from.y] = null;
+        board[to.x, to.y] = piece;
+        piece.boardPosition = to;
+
+        return sim;
+    }
+
+    public void UndoSimulatedMove(SimulatedMove sim)
+    {
+        board[sim.to.x, sim.to.y] = null;
+        board[sim.capturedSquare.x, sim.capturedSquare.y] = sim.captured;
+        board[sim.from.x, sim.from.y] = sim.piece;
+        sim.piece.boardPosition = sim.from;
+    }
+
+    // All pieces of one colour currently on the board (captured pieces excluded).
+    public List<ChessPiece> GetPieces(ChessPiece.PieceColor color)
+    {
+        List<ChessPiece> result = new List<ChessPiece>();
+        int size = chessBoard.boardSize;
+
+        for (int x = 0; x < size; x++)
+            for (int z = 0; z < size; z++)
+            {
+                ChessPiece p = board[x, z];
+                if (p != null && p.pieceColor == color)
+                    result.Add(p);
+            }
+
+        return result;
+    }
+
+    public ChessPiece FindKing(ChessPiece.PieceColor color)
+    {
+        foreach (ChessPiece p in GetPieces(color))
+            if (p.pieceType == ChessPiece.PieceType.King)
+                return p;
+
+        return null;
     }
 
     // ───────────────────────── Debug ─────────────────────────

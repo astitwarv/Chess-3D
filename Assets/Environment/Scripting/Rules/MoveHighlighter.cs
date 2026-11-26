@@ -27,8 +27,11 @@ public class MoveHighlighter : MonoBehaviour
 
         foreach (Vector2Int square in moves)
         {
-            bool isCapture = pieceManager.IsEnemyAt(square, piece.pieceColor);
-            CreateMarker(square, isCapture ? captureColor : moveColor);
+            bool isEnPassant = piece.pieceType == ChessPiece.PieceType.Pawn
+                               && square.x != piece.boardPosition.x
+                               && pieceManager.IsEmpty(square);
+
+            bool isCapture = pieceManager.IsEnemyAt(square, piece.pieceColor) || isEnPassant; CreateMarker(square, isCapture ? captureColor : moveColor);
         }
     }
 

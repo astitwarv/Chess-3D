@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class ChessPiece : MonoBehaviour
 {
@@ -15,8 +15,15 @@ public class ChessPiece : MonoBehaviour
     [Header("Selection")]
     public float selectedLiftHeight = 0.3f;
     public bool isSelected = false;
+    public bool hasMoved = false;   // for castling rights
 
     private Vector3 restPosition;   // where the piece sits when not selected
+
+    // Starting state, recorded once so New Game can restore it
+    private Vector3 startWorldPosition;
+    private Quaternion startWorldRotation;
+    private Vector2Int startBoardPosition;
+    private bool hasStartState = false;
 
     void Awake()
     {
@@ -27,6 +34,8 @@ public class ChessPiece : MonoBehaviour
     {
         Debug.Log(pieceColor + " " + pieceType + " initialized at " + boardPosition);
     }
+
+    // ───────────────────────── Selection ─────────────────────────
 
     public void Select()
     {
@@ -45,21 +54,52 @@ public class ChessPiece : MonoBehaviour
         transform.position = restPosition;
     }
 
+    // ───────────────────────── Movement ─────────────────────────
+
     // Moves the 3D object onto a square, keeping this piece's own height.
     public void PlaceOnSquare(Vector3 squareCentre)
     {
-        Deselect();   // drop back to rest height first
+        Deselect();
 
         Vector3 p = transform.position;
         transform.position = new Vector3(squareCentre.x, p.y, squareCentre.z);
     }
 
-    // Removes the piece from play (hidden, not destroyed, so New Game can restore it later).
+    // Removes the piece from play (hidden, not destroyed, so New Game can restore it).
     public void Capture()
     {
         Deselect();
         gameObject.SetActive(false);
     }
+
+    // ───────────────────────── New Game support ─────────────────────────
+
+    public void RecordStartState()
+    {
+        startWorldPosition = transform.position;
+        startWorldRotation = transform.rotation;
+        startBoardPosition = boardPosition;
+        hasStartState = true;
+    }
+
+    public bool HasStartState()
+    {
+        return hasStartState;
+    }
+
+    public void ResetToStart()
+    {
+        if (!hasStartState) return;
+
+        gameObject.SetActive(true);   // bring back captured pieces
+        isSelected = false;
+        transform.SetPositionAndRotation(startWorldPosition, startWorldRotation);
+        restPosition = startWorldPosition;
+        boardPosition = startBoardPosition;
+        hasMoved = false;
+    }
+
+    // ───────────────────────── Click collider ─────────────────────────
 
     // Builds one BoxCollider on this object that wraps every visible mesh under it.
     void FitClickCollider()

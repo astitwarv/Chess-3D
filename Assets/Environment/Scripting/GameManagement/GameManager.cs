@@ -22,7 +22,14 @@ public class ChessGameManager : MonoBehaviour
 
     public bool IsGameOver { get; private set; }
 
+    // True while the promotion panel is waiting for the player's choice
+    public bool IsWaitingForPromotion
+    {
+        get { return pendingPromotion != null; }
+    }
+
     private string lastMoveText = "";
+    private ChessPiece pendingPromotion;
 
     void Awake()
     {
@@ -52,7 +59,7 @@ public class ChessGameManager : MonoBehaviour
 
     public void MakeMove(ChessPiece piece, Vector2Int target)
     {
-        if (IsGameOver) return;
+        if (IsGameOver || IsWaitingForPromotion) return;
 
         Vector2Int from = piece.boardPosition;
         int dx = target.x - from.x;
@@ -72,7 +79,7 @@ public class ChessGameManager : MonoBehaviour
             return;
         }
 
-        // 2. En passant: the captured pawn is beside the start square, not on the target
+        // 2. En passant: the captured pawn is beside the start square
         if (isEnPassant)
             captured = pieceManager.RemovePieceData(new Vector2Int(target.x, from.y));
 
@@ -89,7 +96,7 @@ public class ChessGameManager : MonoBehaviour
         if (isCastling)
             castleSide = MoveCastlingRook(from, dx);
 
-        // 5. Remember the en passant square for the NEXT move only
+        // 5. En passant square is valid for the NEXT move only
         if (isPawn && Mathf.Abs(dz) == 2)
             pieceManager.enPassantSquare = new Vector2Int(from.x, from.y + dz / 2);
         else
@@ -110,6 +117,57 @@ public class ChessGameManager : MonoBehaviour
 
         Debug.Log(lastMoveText + "   [" + from + " -> " + target + "]");
 
+        // 7. Promotion: pause and wait for the player's choice
+        if (isPawn && target.y == MoveRules.PromotionRank(piece.pieceColor))
+        {
+            pendingPromotion = piece;
+
+            if (ui != null)
+                ui.ShowPromotion(piece.pieceColor);
+            else
+                CompletePromotion(ChessPiece.PieceType.Queen);   // no UI: auto-queen
+
+            return;   // turn ends in CompletePromotion()
+        }
+
+        FinishMove();
+    }
+
+    // Called by the promotion buttons.
+    public void CompletePromotion(ChessPiece.PieceType type)
+    {
+        if (pendingPromotion == null)
+            return;
+
+        if (type == ChessPiece.PieceType.Pawn || type == ChessPiece.PieceType.King)
+        {
+            Debug.LogError("CompletePromotion: cannot promote to " + type);
+            return;
+        }
+
+        ChessPiece pawn = pendingPromotion;
+        pendingPromotion = null;
+
+        if (ui != null)
+            ui.HidePromotion();
+
+        ChessPiece promoted = pieceManager.PromotePawn(pawn, type);
+
+        if (promoted == null)
+        {
+            Debug.LogError("Promotion failed. See previous error.");
+            return;
+        }
+
+        lastMoveText += ", promotes to " + type;
+        Debug.Log(lastMoveText);
+
+        FinishMove();
+    }
+
+    // Shared ending for every move.
+    void FinishMove()
+    {
         if (printBoardAfterMove)
             pieceManager.PrintBoard();
 
@@ -121,7 +179,6 @@ public class ChessGameManager : MonoBehaviour
     {
         int dir = dx > 0 ? 1 : -1;
 
-        // An unmoved rook is always in the corner on the king's side of travel
         int cornerX = dir > 0 ? chessBoard.boardSize - 1 : 0;
         Vector2Int rookFrom = new Vector2Int(cornerX, kingFrom.y);
         Vector2Int rookTo = kingFrom + new Vector2Int(dir, 0);
@@ -138,7 +195,6 @@ public class ChessGameManager : MonoBehaviour
         rook.hasMoved = true;
         rook.PlaceOnSquare(chessBoard.GetSquarePosition(rookTo.x, rookTo.y));
 
-        // h-file is x = 0 in this project's layout
         return cornerX == 0 ? "kingside" : "queenside";
     }
 
@@ -181,10 +237,15 @@ public class ChessGameManager : MonoBehaviour
     {
         bool cameraAlreadyAtWhite = isWhiteTurn;
 
+        // Cancel a promotion that was waiting for a choice
+        pendingPromotion = null;
+        if (ui != null)
+            ui.HidePromotion();
+
         if (pieceSelection != null)
             pieceSelection.ClearSelection();
 
-        pieceManager.ResetBoard();   // also clears en passant; pieces reset hasMoved
+        pieceManager.ResetBoard();   // deletes promoted pieces, restores pawns, clears en passant
         isWhiteTurn = true;
         IsGameOver = false;
         lastMoveText = "";

@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -9,6 +9,14 @@ public class ChessUI : MonoBehaviour
     public TMP_Text turnText;
     public TMP_Text messageText;
     public Button newGameButton;
+
+    [Header("Promotion Panel")]
+    public GameObject promotionPanel;
+    public TMP_Text promotionTitle;
+    public Button queenButton;
+    public Button rookButton;
+    public Button bishopButton;
+    public Button knightButton;
 
     [Header("Messages")]
     public float messageDuration = 2.5f;
@@ -30,15 +38,37 @@ public class ChessUI : MonoBehaviour
 
     void Start()
     {
-        if (newGameButton != null && gameManager != null)
+        if (gameManager == null)
+        {
+            Debug.LogWarning("ChessUI: Game Manager not found.");
+            return;
+        }
+
+        if (newGameButton != null)
             newGameButton.onClick.AddListener(gameManager.NewGame);
         else
-            Debug.LogWarning("ChessUI: New Game Button or Game Manager not assigned.");
+            Debug.LogWarning("ChessUI: New Game Button not assigned.");
 
+        // Each button calls CompletePromotion with its own piece type
+        ConnectPromotionButton(queenButton, ChessPiece.PieceType.Queen);
+        ConnectPromotionButton(rookButton, ChessPiece.PieceType.Rook);
+        ConnectPromotionButton(bishopButton, ChessPiece.PieceType.Bishop);
+        ConnectPromotionButton(knightButton, ChessPiece.PieceType.Knight);
+
+        HidePromotion();
         ClearMessage();
+        ShowTurn(gameManager.isWhiteTurn);
+    }
 
-        if (gameManager != null)
-            ShowTurn(gameManager.isWhiteTurn);
+    void ConnectPromotionButton(Button button, ChessPiece.PieceType type)
+    {
+        if (button == null)
+        {
+            Debug.LogWarning("ChessUI: " + type + " promotion button not assigned.");
+            return;
+        }
+
+        button.onClick.AddListener(() => gameManager.CompletePromotion(type));
     }
 
     void Update()
@@ -46,6 +76,8 @@ public class ChessUI : MonoBehaviour
         if (hideMessageAt > 0f && Time.time >= hideMessageAt)
             ClearMessage();
     }
+
+    // ───────────────────────── Turn / game state ─────────────────────────
 
     public void ShowTurn(bool isWhiteTurn, bool inCheck = false)
     {
@@ -62,6 +94,25 @@ public class ChessUI : MonoBehaviour
         turnText.text = result;
         turnText.color = gameOverColor;
     }
+
+    // ───────────────────────── Promotion ─────────────────────────
+
+    public void ShowPromotion(ChessPiece.PieceColor color)
+    {
+        if (promotionTitle != null)
+            promotionTitle.text = color + " pawn promotes to:";
+
+        if (promotionPanel != null)
+            promotionPanel.SetActive(true);
+    }
+
+    public void HidePromotion()
+    {
+        if (promotionPanel != null)
+            promotionPanel.SetActive(false);
+    }
+
+    // ───────────────────────── Messages ─────────────────────────
 
     public void ShowMessage(string text, bool isError = false)
     {

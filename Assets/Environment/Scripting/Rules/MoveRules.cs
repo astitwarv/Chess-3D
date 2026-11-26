@@ -51,6 +51,12 @@ public static class MoveRules
             : ChessPiece.PieceColor.White;
     }
 
+    // The rank where this colour's pawns promote (the far end of the board).
+    public static int PromotionRank(ChessPiece.PieceColor color)
+    {
+        return color == ChessPiece.PieceColor.White ? 0 : 7;
+    }
+
     // ───────────────────────── Legal moves (use these for gameplay) ─────────────────────────
 
     public static List<Vector2Int> GetLegalMoves(ChessPiece piece, PieceManager board)

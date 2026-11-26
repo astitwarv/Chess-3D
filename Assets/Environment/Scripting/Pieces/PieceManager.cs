@@ -20,6 +20,7 @@ public class PieceManager : MonoBehaviour
     // "No square" marker, and the square a pawn can be captured on en passant this turn.
     public static readonly Vector2Int NoSquare = new Vector2Int(-1, -1);
     public Vector2Int enPassantSquare = NoSquare;
+    private List<ChessPiece> promotedPieces =new List<ChessPiece>();
 
     void Awake()
     {
@@ -237,11 +238,65 @@ public class PieceManager : MonoBehaviour
         return piece;
     }
 
+    // Replaces a pawn with a new piece of the chosen type. Returns the new piece.
+    public ChessPiece PromotePawn(ChessPiece pawn, ChessPiece.PieceType newType)
+    {
+        ChessPiece template = FindTemplate(newType, pawn.pieceColor);
+
+        if (template == null)
+        {
+            Debug.LogError("PromotePawn: no " + pawn.pieceColor + " " + newType + " model to copy.");
+            return null;
+        }
+
+        Vector2Int square = pawn.boardPosition;
+
+        // Remove the pawn (hidden, not destroyed, so New Game can restore it)
+        board[square.x, square.y] = null;
+        pawn.Capture();
+
+        // Copy the template's 3D object into the same parent group
+        GameObject copy = Instantiate(template.gameObject, pawn.transform.parent);
+        copy.name = pawn.pieceColor + " " + newType + " (promoted)";
+        copy.SetActive(true);   // template may be a captured (hidden) piece
+
+        // Place it on the square, keeping the template's own height and facing
+        Vector3 centre = chessBoard.GetSquarePosition(square.x, square.y);
+        copy.transform.SetPositionAndRotation(
+            new Vector3(centre.x, template.transform.position.y, centre.z),
+            template.transform.rotation);
+
+        ChessPiece promoted = copy.GetComponent<ChessPiece>();
+        promoted.isSelected = false;
+        promoted.hasMoved = true;
+        promoted.boardPosition = square;
+
+        board[square.x, square.y] = promoted;
+        promotedPieces.Add(promoted);
+
+        return promoted;
+    }
+
+    // Finds an original piece of this type and colour to copy (captured ones count too).
+    ChessPiece FindTemplate(ChessPiece.PieceType type, ChessPiece.PieceColor color)
+    {
+        foreach (ChessPiece p in allPieces)
+            if (p.pieceType == type && p.pieceColor == color)
+                return p;
+
+        return null;
+    }
+
     // ───────────────────────── New Game ─────────────────────────
 
     // Puts every piece back to its starting square and rebuilds the board record.
     public void ResetBoard()
     {
+        // Delete promoted copies (their original pawns are restored below)
+        foreach (ChessPiece p in promotedPieces)
+            if (p != null)
+                Destroy(p.gameObject);
+        promotedPieces.Clear();
         int size = chessBoard.boardSize;
         board = new ChessPiece[size, size];
 
